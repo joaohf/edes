@@ -1,7 +1,7 @@
 -module(sim_cont).
 
 %% API exports
-%% 
+%%
 -export([
          start/3, start/4,
          start_link/3, start_link/4,
@@ -10,7 +10,7 @@
 
 
 %% System exports
-%% 
+%%
 -export([
          init_it/6,
          system_continue/3,
@@ -20,9 +20,11 @@
 
 
 %% Types and Callbacks
-%% 
--type lp_spec() :: {'local', Name :: atom(), Module :: module()} 
-                 | {'remote', Node :: node(), Name :: atom(), Module :: module()}.
+%%
+-type lp_spec() :: {'local', Name :: atom(), Module :: module(), Args :: term()}
+                 | {'local', Name :: atom(), Module :: module(), Args :: term(), Optios :: term()}
+                 | {'remote', Node :: node(), Name :: atom(), Module :: module(), Args :: term()}
+                 | {'remote', Node :: node(), Name :: atom(), Module :: module(), Args :: term(), Options :: term()}.
 
 -callback init(Args :: term()) ->
     {ok, [lp_spec()]}
@@ -30,7 +32,7 @@
 
 
 %% API
-%% 
+%%
 %% @doc Callback, not documented
 start(Mod, Args, Options) ->
     gen:start(?MODULE, nolink, Mod, Args, Options).
@@ -69,7 +71,7 @@ format_status(Opt, StatusData) ->
 
 
 %% System functions
-%% 
+%%
 %% @doc Callback, not documented
 init_it(Starter, self, Name, Mod, Args, Options) ->
     init_it(Starter, self(), Name, Mod, Args, Options);
@@ -111,10 +113,10 @@ system_code_change([Name, State, Mod, Time], _Module, OldVsn, Extra) ->
     end.
 
 %% Internal functions
-%% 
+%%
 
 %% @doc Internal, Main loop of the Simulation Controller. Does not do anything.
-loop(Parent, Name, State, Mod, Timeout, Debug) ->
+loop(_Parent, _Name, _State, _Mod, _Timeout, _Debug) ->
     ok.
 
 %% @doc Internal, for each LP specification, spawns/starts the OTP sim_proc behaviour process.
@@ -122,8 +124,10 @@ loop(Parent, Name, State, Mod, Timeout, Debug) ->
 -spec spawnLPs([lp_spec()]) -> ok.
 spawnLPs(LPSpecs) ->
     %% spawn sim_proc behaviour process for each logical process
-    lists:foreach(fun ({local, Name, Module}) -> 
-                          sim_proc:start({local, Name}, Module, [], [{debug, [trace]}])
+    lists:foreach(fun ({local, Name, Module, Args, Options}) ->
+                          sim_proc:start({local, Name}, Module, Args, Options);
+                      ({local, Name, Module, Args}) ->
+                          sim_proc:start({local, Name}, Module, Args, [])
                   end, LPSpecs).
 
 %% @doc Syncs together LPs upon initialization, so to make sure the LPs warmed up.
@@ -136,13 +140,16 @@ syncLPs(LPSpecs) ->
 %% @doc Syncs together LPs upon initialization, so to make sure the LPs warmed up.
 syncLPs([], 0) ->
     ok;
-syncLPs([], N) -> 
+syncLPs([], N) ->
     %% synchronization reply of the sim_proc processes
     %% to ensure that the sim_proc processes have warmed up
     receive
         ok -> syncLPs([], N-1)
     end;
-syncLPs([{local, Name, _} | Rest], N) ->
+syncLPs([{local, Name, _Module, _Args} | Rest], N) ->
+    Name ! {controller_sync, self()},
+    syncLPs(Rest, N);
+syncLPs([{local, Name, _Module, _Args, _Opts} | Rest], N) ->
     Name ! {controller_sync, self()},
     syncLPs(Rest, N).
 
@@ -184,7 +191,7 @@ terminate(Reason, Name, Msg, Mod, State, Debug) ->
 error_info(_Reason, application_controller, _Msg, _State, _Debug) ->
     ok;
 error_info(Reason, Name, Msg, State, Debug) ->
-    Reason1 = 
+    Reason1 =
 	case Reason of
 	    {undef,[{M,F,A,L}|MFAs]} ->
 		case code:is_loaded(M) of
@@ -200,7 +207,7 @@ error_info(Reason, Name, Msg, State, Debug) ->
 		end;
 	    _ ->
 		Reason
-	end,    
+	end,
     error_logger:format("** Simulation controller ~p terminating \n"
            "** Last message in was ~p~n"
            "** When Server state == ~p~n"
@@ -215,7 +222,7 @@ print_event(Dev, Event, Name) ->
 
 
 %% Misc functions
-%% 
+%%
 
 %% @doc Misc, not documented
 name({local,Name}) -> Name;
@@ -232,7 +239,7 @@ unregister_name({via, Mod, Name}) ->
     _ = Mod:unregister_name(Name);
 unregister_name(Pid) when is_pid(Pid) ->
     Pid.
-    
+
 %% @doc Misc, not documented
 opt(Op, [{Op, Value}|_]) ->
     {ok, Value};
@@ -250,7 +257,7 @@ debug_options(Name, Opts) ->
 
 %% @doc Misc, not documented
 dbg_options(Name, []) ->
-    Opts = 
+    Opts =
 	case init:get_argument(generic_debug) of
 	    error ->
 		[];
