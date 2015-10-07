@@ -116,8 +116,13 @@ system_code_change([Name, State, Mod, Time], _Module, OldVsn, Extra) ->
 %%
 
 %% @doc Internal, Main loop of the Simulation Controller. Does not do anything.
-loop(_Parent, _Name, _State, _Mod, _Timeout, _Debug) ->
-    ok.
+loop(Parent, Name, State, Mod, Timeout, Debug) ->
+    Msg = receive
+		  Input -> Input
+	  after 10000 ->
+			timeout
+	  end,
+    loop(Parent, Name, State, Mod, Timeout, Debug).
 
 %% @doc Internal, for each LP specification, spawns/starts the OTP sim_proc behaviour process.
 %% @todo starting global LPs
@@ -144,7 +149,7 @@ syncLPs([], N) ->
     %% synchronization reply of the sim_proc processes
     %% to ensure that the sim_proc processes have warmed up
     receive
-        ok -> syncLPs([], N-1)
+	    {LPid, ok} -> io:format("PPPP ~p~n", [LPid]), syncLPs([], N-1)
     end;
 syncLPs([{local, Name, _Module, _Args} | Rest], N) ->
     Name ! {controller_sync, self()},

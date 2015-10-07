@@ -302,7 +302,7 @@ loop(Parent, Name, State, Mod, Timeout, Debug) ->
 sync_controller() ->
     receive
         {controller_sync, Controller} ->  send_nulls(0), % initiate lookahead
-                                          Controller ! ok
+                                          Controller ! {self(), ok}
     end.
             
 
